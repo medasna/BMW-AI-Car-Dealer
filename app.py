@@ -13,7 +13,7 @@ from search_cars import search_cars
 
 st.set_page_config(
     page_title="BMW Assistant",
-    page_icon="🚗",
+    page_icon="",
     layout="centered"
 )
 
@@ -468,7 +468,7 @@ if "messages" not in st.session_state:
 st.title("🚗 BMW Assistant")
 
 st.caption(
-    "Tell me what kind of BMW you're looking for."
+    "Dites-moi quel type de BMW vous recherchez."
 )
 
 
@@ -501,7 +501,7 @@ for message in st.session_state.messages:
 # ============================================================
 
 user_input = st.chat_input(
-    "What kind of BMW are you looking for?"
+    "Prêt à vous aider"
 )
 
 
