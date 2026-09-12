@@ -201,6 +201,11 @@ if manager_page and st.session_state.manager_authenticated:
                     value=True
                 )
 
+                image_url = st.text_input(
+                    "Image URL",
+                    placeholder="https://example.com/bmw-x3.jpg"
+                )
+
 
             submitted = st.form_submit_button(
                 "➕ Add Car"
@@ -240,9 +245,10 @@ if manager_page and st.session_state.manager_authenticated:
                             horsepower,
                             mileage,
                             seats,
-                            available
+                            available,
+                            image_url
                         )
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                         """,
                         (
                             "BMW",
@@ -255,7 +261,8 @@ if manager_page and st.session_state.manager_authenticated:
                             horsepower,
                             mileage,
                             seats,
-                            int(available)
+                            int(available),
+                            image_url.strip() or None
                         )
                     )
 
@@ -319,10 +326,11 @@ def find_cars(
     for car in cars:
 
         results.append(
-            f"{car['brand']} {car['model']} "
-            f"({car['year']}) - €{car['price']} - "
-            f"{car['fuel']} - {car['transmission']} - "
-            f"{car['body_type']} - {car['horsepower']} HP"
+         f"{car['brand']} {car['model']} "
+         f"({car['year']}) - €{car['price']} - "
+         f"{car['fuel']} - {car['transmission']} - "
+         f"{car['body_type']} - {car['horsepower']} HP - "
+         f"IMAGE_URL: {car['image_url']}"
         )
 
 
@@ -462,6 +470,30 @@ if "messages" not in st.session_state:
 
 
 # ============================================================
+# API MESSAGE HELPER
+# ============================================================
+
+def get_api_messages():
+    """Return only message fields accepted by the chat API."""
+    allowed_fields = {
+        "role",
+        "content",
+        "tool_calls",
+        "tool_call_id",
+        "name"
+    }
+
+    return [
+        {
+            key: value
+            for key, value in message.items()
+            if key in allowed_fields
+        }
+        for message in st.session_state.messages
+    ]
+
+
+# ============================================================
 # CUSTOMER CHAT
 # ============================================================
 
@@ -494,6 +526,25 @@ for message in st.session_state.messages:
             st.write(
                 message["content"]
             )
+
+            # Display any car images attached to this recommendation.
+            cars = message.get("cars", [])
+
+            for car in cars:
+                image_url = car.get("image_url")
+
+                if image_url:
+                    st.image(
+                        image_url,
+                        use_container_width=True
+                    )
+
+                st.markdown(
+                    f"**BMW {car['model']} ({car['year']})**  "
+                    f"€{car['price']:,} · {car['fuel']} · "
+                    f"{car['transmission']} · {car['body_type']} · "
+                    f"{car['horsepower']} HP"
+                )
 
 
 # ============================================================
@@ -580,23 +631,70 @@ if user_input:
         # EXECUTE TOOLS
         # ----------------------------------------------------
 
+        recommended_cars = []
+
         for tool_call in assistant_message.tool_calls:
 
             if tool_call.function.name == "find_cars":
 
                 arguments = tool_call.function.arguments
 
-
-                # Hugging Face returns arguments as JSON text
+                # Hugging Face returns arguments as JSON text.
                 if isinstance(arguments, str):
-
                     arguments = json.loads(arguments)
-
 
                 result = find_cars(
                     **arguments
                 )
 
+                # Parse the inventory result so Streamlit can display
+                # the matching car images separately from the AI text.
+                try:
+                    for line in result.splitlines():
+                        if "IMAGE_URL:" in line:
+                            image_url = line.split(
+                                "IMAGE_URL:",
+                                1
+                            )[1].strip()
+
+                            parts = line.split(" - ")
+
+                            if len(parts) >= 7:
+                                brand_model = parts[0]
+                                year = parts[1].strip("()")
+                                price_text = parts[2].replace("€", "")
+                                fuel = parts[3]
+                                transmission = parts[4]
+                                body_type = parts[5]
+                                horsepower = parts[6].replace(" HP", "")
+
+                                model_parts = brand_model.split(" ", 1)
+                                model = (
+                                    model_parts[1]
+                                    if len(model_parts) > 1
+                                    else brand_model
+                                )
+
+                                try:
+                                    recommended_cars.append({
+                                        "model": model,
+                                        "year": int(year),
+                                        "price": int(price_text),
+                                        "fuel": fuel,
+                                        "transmission": transmission,
+                                        "body_type": body_type,
+                                        "horsepower": int(horsepower),
+                                        "image_url": (
+                                            image_url
+                                            if image_url
+                                            and image_url.lower() != "none"
+                                            else None
+                                        )
+                                    })
+                                except ValueError:
+                                    pass
+                except Exception:
+                    recommended_cars = []
 
                 st.session_state.messages.append(
                     {
@@ -628,7 +726,8 @@ if user_input:
         st.session_state.messages.append(
             {
                 "role": "assistant",
-                "content": answer
+                "content": answer,
+                "cars": recommended_cars
             }
         )
 
